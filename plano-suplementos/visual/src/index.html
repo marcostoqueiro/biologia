@@ -1,0 +1,88 @@
+<meta charset="utf-8">
+<title>Por Dentro do Pote</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/*@@STYLE@@*/
+</style>
+
+<header class="top">
+  <div class="wrap top-grid">
+    <span class="eyebrow">Plano de suplementos · Etapa 1 em versão visual</span>
+    <h1>Por dentro <span class="pote">do pote</span></h1>
+    <p class="lede">Como whey, creatina e pré-treino são feitos: da matéria-prima ao pó, da máquina à molécula. Cada equipamento é uma simulação que responde aos controles; cada reação roda em 3D, passo a passo, com o porquê.</p>
+    <div class="tabs" role="tablist" aria-label="Área da fábrica">
+      <button class="tab" role="tab" id="tab-whey" data-tab="whey" aria-controls="panel" aria-selected="true"><span class="area">Área 100</span><span class="nm">Whey protein</span></button>
+      <button class="tab" role="tab" id="tab-creatina" data-tab="creatina" aria-controls="panel" aria-selected="false"><span class="area">Área 200</span><span class="nm">Creatina</span></button>
+      <button class="tab" role="tab" id="tab-pre" data-tab="pre" aria-controls="panel" aria-selected="false"><span class="area">Área 300</span><span class="nm">Pré-treino</span></button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="panel" id="panel" role="tabpanel" aria-labelledby="tab-whey">
+      <section class="sec in-panel" id="linha" aria-labelledby="h-linha">
+        <div class="sec-head"><h2 id="h-linha">Linha de produção</h2><p class="hint" id="line-intro"></p></div>
+        <div class="pid-scroll" id="pid"></div>
+        <div class="line-nav">
+          <span class="counter" id="counter"></span>
+          <button type="button" class="btn" id="prev">◀ Etapa anterior</button>
+          <button type="button" class="btn primary" id="next">Próxima etapa ▶</button>
+        </div>
+      </section>
+
+      <section class="sec in-panel" id="bancada" aria-label="Equipamento selecionado">
+        <div class="bench">
+          <div class="scene-card">
+            <div class="scene-bar"><span class="ttl" id="scene-ttl"></span><button type="button" class="btn" id="scene-play"></button></div>
+            <div class="scene-scroll" id="scene-wrap"><canvas id="scene" role="img"></canvas></div>
+            <div class="controls" id="controls"></div>
+            <div class="readouts" id="readouts" aria-label="Leituras dos instrumentos"></div>
+          </div>
+          <article class="sheet" id="sheet"></article>
+        </div>
+      </section>
+
+      <section class="sec in-panel" id="reacoes" aria-labelledby="h-rx">
+        <div class="sec-head"><h2 id="h-rx">Reações em 3D</h2><p class="hint">Escolha uma reação e avance passo a passo. Setas amarelas mostram para onde os elétrons vão; ligações em âmbar estão se formando ou se rompendo.</p></div>
+        <div class="chips" id="rx-chips"></div>
+        <div class="rx-grid">
+          <div class="stage-card">
+            <canvas class="stage-canvas" id="stage" role="img"></canvas>
+            <div class="stage-top">
+              <div><div class="rx-title" id="rx-title"></div><div id="rx-step-lab"></div></div>
+              <div class="legend" aria-label="Cores dos átomos"><span><i style="background:#5d6973"></i>C</span><span><i style="background:#f1f4f6"></i>H</span><span><i style="background:#4a78ff"></i>N</span><span><i style="background:#f0453a"></i>O</span></div>
+            </div>
+            <div class="stage-msg" id="stage-msg" hidden></div>
+            <div class="stage-bottom">
+              <input type="range" id="scrub" min="0" max="3" step="0.01" value="0" aria-label="Linha do tempo da reação">
+              <div class="stage-row">
+                <button type="button" class="btn" id="rx-prev">◀</button>
+                <button type="button" class="btn primary" id="rx-next">Próximo passo ▶</button>
+                <button type="button" class="btn" id="rx-play" aria-pressed="false">▶ Reproduzir tudo</button>
+                <button type="button" class="btn" id="rx-restart">↺ Recomeçar</button>
+                <button type="button" class="btn spacer" id="rx-sway" aria-pressed="true">Balanço</button>
+              </div>
+              <div class="stage-hint">arraste para girar · pinça ou Ctrl + roda para zoom · duplo clique centraliza</div>
+            </div>
+          </div>
+          <div class="story" id="story"></div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="foot">
+      <p>As simulações são modelos didáticos simplificados, calibrados para mostrar tendências (o que melhora, o que piora e por quê), não para projetar uma planta.</p>
+      <p>Geometrias 3D geradas com RDKit (ETKDG + MMFF); os intermediários de reação são ilustrativos. Números de referência e fontes: documento da Etapa 1 do plano.</p>
+    </footer>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/*@@SCRIPT@@*/
+</script>

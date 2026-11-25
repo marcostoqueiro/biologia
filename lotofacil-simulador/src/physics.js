@@ -1,4 +1,4 @@
-// Motor físico do sorteio: 25 esferas rígidas dentro de um globo giratório com pás.
+// Motor físico do sorteio: 25 esferas rígidas dentro de um globo (tambor) giratório com hastes.
 // Unidades SI (m, kg, s). Sem dependências: roda igual no navegador e no Node.
 
 export const DEFAULTS = {
@@ -6,9 +6,13 @@ export const DEFAULTS = {
   ballMass: 0.066, // 66 g (dado divulgado pela Caixa)
   massTol: 0.0003, // ± variação de fabricação por bola (kg)
   diamTol: 0.0002, // ± variação de fabricação por bola (m)
-  globeRadius: 0.26, // estimativa: a Caixa não publica o projeto do globo
-  rpm: 34, // estimativa
-  paddles: 4, // estimativa
+  // Globo: medido em foto do Espaço da Sorte usando as bolas (50 mm) como régua.
+  // Formato de tambor: frente plana com aro, corpo cilíndrico curto e fundo abaulado.
+  globeRadius: 0.28, // aro com ~54–59 cm de diâmetro (± 10%)
+  globeDepth: 0.39, // profundidade ~1,4 × raio (± 15%)
+  paddles: 6, // hastes finas ao longo da parede (contagem aproximada pela foto)
+  crossbars: 1, // haste que atravessa o diâmetro, visível na foto
+  rpm: 34, // estimativa: não dá para medir em foto
   restitution: 0.72, // bola-bola (borracha maciça)
   wallRestitution: 0.6, // bola-acrílico
   friction: 0.4,
@@ -40,13 +44,23 @@ export function randomSeed() {
   return (Math.random() * 4294967296) >>> 0;
 }
 
-const PADDLE_INSET = 0.045; // distância da barra até a parede
-const PADDLE_RADIUS = 0.01;
+const PADDLE_INSET = 0.035; // distância do eixo da haste até a parede
+const PADDLE_RADIUS = 0.006;
+
+// Tambor com eixo de rotação em z: frente plana em z = F, parede cilíndrica de
+// zB até F e fundo em meia-esfera (centro em z = zB) atrás.
+export function globeShape(p) {
+  const R = p.globeRadius;
+  const depth = Math.max(p.globeDepth, R + 0.08);
+  const F = depth / 2, zB = R - depth / 2;
+  return { R, depth, F, zB, zPort: (zB + F) / 2 };
+}
 
 export function paddleGeometry(p) {
-  const rho = p.globeRadius - PADDLE_INSET;
-  const halfChord = Math.sqrt(Math.max(0, p.globeRadius ** 2 - rho ** 2));
-  return { rho, halfLen: halfChord * 0.8, radius: PADDLE_RADIUS };
+  const s = globeShape(p);
+  const rho = s.R - PADDLE_INSET;
+  const a = Math.sqrt(Math.max(0, s.R ** 2 - (rho + 0.012) ** 2)) * 0.8;
+  return { rho, zLo: s.zB - a, zHi: s.F - 0.015, radius: PADDLE_RADIUS, barHalf: s.R - 0.005 };
 }
 
 export class Draw {
@@ -63,6 +77,8 @@ export class Draw {
     this.nextPick = p.mixTime;
     this.portOpen = false;
     this.pad = paddleGeometry(p);
+    this.shape = globeShape(p);
+    const { F, zB } = this.shape;
 
     this.balls = [];
     const R = p.globeRadius;
@@ -72,11 +88,11 @@ export class Draw {
       let x, y, z, ok, tries = 0;
       do {
         // posição inicial aleatória dentro do globo, sem sobreposição
-        const lim = R - r - 0.06;
+        const lim = R - r - 0.05;
         x = (rnd() * 2 - 1) * lim;
         y = (rnd() * 2 - 1) * lim;
-        z = (rnd() * 2 - 1) * lim;
-        ok = x * x + y * y + z * z < lim * lim;
+        z = zB - lim + rnd() * (F - r - 0.02 - (zB - lim));
+        ok = Math.hypot(x, y, Math.min(0, z - zB)) < lim;
         for (let j = 0; ok && j < this.balls.length; j++) {
           const b = this.balls[j];
           const d = Math.hypot(x - b.x, y - b.y, z - b.z);
@@ -189,26 +205,43 @@ export class Draw {
       }
     }
 
-    const { rho, halfLen, radius: pr } = this.pad;
+    const { rho, zLo, zHi, radius: pr, barHalf } = this.pad;
+    const { F, zB, zPort } = this.shape;
     for (const b of balls) {
       if (!b.active) continue;
-      // pás: barras paralelas ao eixo de rotação (z), girando junto com o globo
+      // hastes na parede: paralelas ao eixo de rotação (z), girando junto com o globo
       for (let k = 0; k < p.paddles; k++) {
         const th = this.angle + (k * 2 * Math.PI) / p.paddles;
         const px = rho * Math.cos(th), py = rho * Math.sin(th);
-        const pz = Math.max(-halfLen, Math.min(halfLen, b.z));
+        const pz = Math.max(zLo, Math.min(zHi, b.z));
         const dx = b.x - px, dy = b.y - py, dz = b.z - pz;
         const d = Math.hypot(dx, dy, dz);
         if (d < b.r + pr && d > 0) {
           this._hitSurface(b, dx / d, dy / d, dz / d, b.r + pr - d, -w * py, w * px, 0, p.wallRestitution);
         }
       }
-      // parede esférica: velocidade da parede = ω × ponto (ω no eixo z)
-      const d = Math.hypot(b.x, b.y, b.z);
+      // hastes diametrais: atravessam o tambor passando pelo eixo
+      for (let k = 0; k < p.crossbars; k++) {
+        const th = this.angle + (k * Math.PI) / p.crossbars;
+        const ux = Math.cos(th), uy = Math.sin(th);
+        const t = Math.max(-barHalf, Math.min(barHalf, b.x * ux + b.y * uy));
+        const px = ux * t, py = uy * t;
+        const dx = b.x - px, dy = b.y - py, dz = b.z - zPort;
+        const d = Math.hypot(dx, dy, dz);
+        if (d < b.r + pr && d > 0) {
+          this._hitSurface(b, dx / d, dy / d, dz / d, b.r + pr - d, -w * py, w * px, 0, p.wallRestitution);
+        }
+      }
+      // parede: velocidade da parede = ω × ponto (ω no eixo z)
+      const dzb = Math.min(0, b.z - zB); // atrás de zB vale a meia-esfera; à frente, o cilindro
+      const d = Math.hypot(b.x, b.y, dzb);
       if (d > R - b.r) {
-        const nx = -b.x / d, ny = -b.y / d, nz = -b.z / d;
+        const nx = -b.x / d, ny = -b.y / d, nz = -dzb / d;
         const cxw = (b.x / d) * R, cyw = (b.y / d) * R;
         this._hitSurface(b, nx, ny, nz, d - (R - b.r), -w * cyw, w * cxw, 0, p.wallRestitution);
+      }
+      if (b.z > F - b.r) { // tampa frontal plana
+        this._hitSurface(b, 0, 0, -1, b.z - (F - b.r), -w * b.y, w * b.x, 0, p.wallRestitution);
       }
     }
 
@@ -219,9 +252,9 @@ export class Draw {
       let best = null, bestOff = Infinity;
       for (const b of balls) {
         if (!b.active) continue;
-        const d = Math.hypot(b.x, b.y, b.z);
+        const d = Math.hypot(b.x, b.y);
         if (d < R - b.r - 0.004 || b.y > 0) continue; // precisa estar encostada no fundo
-        const off = Math.hypot(b.x, b.z);
+        const off = Math.hypot(b.x, b.z - zPort);
         if (off < b.r * 0.6 && off < bestOff) { best = b; bestOff = off; }
       }
       if (best) {

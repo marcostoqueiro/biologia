@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Draw, DEFAULTS, runDraw, randomSeed, paddleGeometry } from './physics.js';
+import { Draw, DEFAULTS, runDraw, randomSeed, paddleGeometry, globeShape } from './physics.js';
 
 const $ = (id) => document.getElementById(id);
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -11,8 +11,10 @@ const FIELDS = [
   ['ballDiameter', 'Diâmetro da bola (mm)', 1000, 40, 60, 0.5],
   ['ballMass', 'Massa da bola (g)', 1000, 40, 100, 1],
   ['globeRadius', 'Raio do globo (cm)', 100, 20, 40, 1],
+  ['globeDepth', 'Profundidade do globo (cm)', 100, 28, 80, 1],
   ['rpm', 'Rotação do globo (rpm)', 1, 10, 55, 1],
-  ['paddles', 'Pás misturadoras', 1, 0, 8, 1],
+  ['paddles', 'Hastes na parede', 1, 0, 12, 1],
+  ['crossbars', 'Hastes diametrais', 1, 0, 3, 1],
   ['restitution', 'Elasticidade bola-bola', 1, 0.3, 0.95, 0.01],
   ['friction', 'Atrito', 1, 0, 1, 0.05],
   ['mixTime', 'Mistura inicial (s)', 1, 2, 30, 1],
@@ -44,7 +46,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#14101c');
 const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 20);
-camera.position.set(0.42, 0.1, 2.2);
+camera.position.set(0.95, 0.3, 2.15);
 const controls = new OrbitControls(camera, canvas);
 controls.target.set(0.3, -0.12, 0);
 controls.enableDamping = true;
@@ -97,55 +99,61 @@ function buildScene() {
   ballMeshes.length = 0;
   const R = params.globeRadius;
 
-  const glass = new THREE.Mesh(
-    new THREE.SphereGeometry(R + 0.004, 48, 32),
-    new THREE.MeshPhysicalMaterial({ color: '#cfe6ff', transparent: true, opacity: 0.13, roughness: 0.05, depthWrite: false, side: THREE.DoubleSide }),
-  );
-  globeGroup.add(glass);
-  // aros para a rotação ficar visível
-  const ringMat = new THREE.MeshStandardMaterial({ color: '#b9a7d6', metalness: 0.6, roughness: 0.3 });
-  for (let k = 0; k < 2; k++) {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.006, 0.004, 8, 64), ringMat);
-    ring.rotation.y = Math.PI / 2;
-    ring.rotation.x = (k * Math.PI) / 2;
-    const holder = new THREE.Group();
-    holder.rotation.z = (k * Math.PI) / 2;
-    holder.add(ring);
-    globeGroup.add(holder);
+  const { F, zB, zPort } = globeShape(params);
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: '#cfe6ff', transparent: true, opacity: 0.13, roughness: 0.05, depthWrite: false, side: THREE.DoubleSide });
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.004, R + 0.004, F - zB, 48, 1, true), glassMat);
+  wall.rotation.x = Math.PI / 2;
+  wall.position.z = (F + zB) / 2;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(R + 0.004, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), glassMat);
+  dome.rotation.x = -Math.PI / 2; // polo voltado para trás
+  dome.position.z = zB;
+  const front = new THREE.Mesh(new THREE.CircleGeometry(R + 0.004, 48), glassMat);
+  front.position.z = F;
+  globeGroup.add(wall, dome, front);
+  const ringMat = new THREE.MeshStandardMaterial({ color: '#dfe6ee', metalness: 0.2, roughness: 0.5 });
+  for (const [z, thick] of [[F, 0.011], [zB, 0.005]]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.008, thick, 10, 72), ringMat);
+    ring.position.z = z;
+    globeGroup.add(ring);
   }
   const pg = paddleGeometry(params);
-  const padMat = new THREE.MeshStandardMaterial({ color: '#e8e2f2', metalness: 0.3, roughness: 0.4 });
+  const padMat = new THREE.MeshStandardMaterial({ color: '#e8eef5', metalness: 0.3, roughness: 0.4 });
   for (let k = 0; k < params.paddles; k++) {
     const th = (k * 2 * Math.PI) / params.paddles;
-    const bar = new THREE.Mesh(new THREE.CapsuleGeometry(pg.radius, pg.halfLen * 2, 4, 12), padMat);
+    const bar = new THREE.Mesh(new THREE.CapsuleGeometry(pg.radius, pg.zHi - pg.zLo, 4, 10), padMat);
     bar.rotation.x = Math.PI / 2;
-    bar.position.set(pg.rho * Math.cos(th), pg.rho * Math.sin(th), 0);
+    bar.position.set(pg.rho * Math.cos(th), pg.rho * Math.sin(th), (pg.zHi + pg.zLo) / 2);
+    globeGroup.add(bar);
+  }
+  for (let k = 0; k < params.crossbars; k++) {
+    const bar = new THREE.Mesh(new THREE.CapsuleGeometry(pg.radius, pg.barHalf * 2, 4, 10), padMat);
+    bar.rotation.z = (k * Math.PI) / params.crossbars - Math.PI / 2;
+    bar.position.z = zPort;
     globeGroup.add(bar);
   }
 
   // estrutura fixa: eixo, tubo de saída e canaleta das bolas sorteadas
   const metal = new THREE.MeshStandardMaterial({ color: '#5b4a78', metalness: 0.5, roughness: 0.45 });
-  for (const s of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.018, R + 0.25, 0.018), metal);
-    leg.position.set(0, -(R + 0.25) / 2, s * (R + 0.04));
-    staticGroup.add(leg);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.05, 16), metal);
-    hub.rotation.x = Math.PI / 2;
-    hub.position.set(0, 0, s * (R + 0.03));
-    staticGroup.add(hub);
-  }
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 2 * R + 0.2), metal);
+  // o tambor real é apoiado por trás, deixando a frente livre
+  const zBack = zB - R - 0.04;
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.03, R + 0.25, 0.03), metal);
+  leg.position.set(0, -(R + 0.25) / 2, zBack);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.07, 16), metal);
+  hub.rotation.x = Math.PI / 2;
+  hub.position.set(0, 0, zBack + 0.02);
+  staticGroup.add(leg, hub);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 2 * R + 0.3), metal);
   base.position.set(0.35, -R - 0.25, 0);
   staticGroup.add(base);
   const tubeMat = new THREE.MeshPhysicalMaterial({ color: '#cfe6ff', transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false });
   const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.1, 20, 1, true), tubeMat);
-  tube.position.set(0, -R - 0.05, 0);
+  tube.position.set(0, -R - 0.05, zPort);
   staticGroup.add(tube);
   const trayY = -R - 0.13;
   const tray = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.008, 0.07), metal);
-  tray.position.set(0.42, trayY - 0.03, 0);
+  tray.position.set(0.42, trayY - 0.03, zPort);
   staticGroup.add(tray);
-  trayStart = new THREE.Vector3(0.84, trayY, 0);
+  trayStart = new THREE.Vector3(0.84, trayY, zPort);
 
   for (let i = 0; i < 25; i++) {
     const mesh = new THREE.Mesh(
@@ -166,7 +174,7 @@ let lastT = 0;
 const exits = new Map(); // nº da bola -> {t, from, slot}
 
 function trayPos(slot) {
-  return new THREE.Vector3(trayStart.x - slot * (params.ballDiameter + 0.004), trayStart.y, 0);
+  return new THREE.Vector3(trayStart.x - slot * (params.ballDiameter + 0.004), trayStart.y, trayStart.z);
 }
 
 function resetScene(seed) {
@@ -188,7 +196,7 @@ function syncMeshes() {
     if (ex) {
       // animação da bola descendo o tubo e rolando pela canaleta
       const k = Math.min(1, ex.t);
-      const drop = new THREE.Vector3(0, trayStart.y, 0);
+      const drop = new THREE.Vector3(0, trayStart.y, trayStart.z);
       const end = trayPos(ex.slot);
       if (k < 0.35) m.position.lerpVectors(ex.from, drop, k / 0.35);
       else m.position.lerpVectors(drop, end, (k - 0.35) / 0.65);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Draw, DEFAULTS, runDraw, randomSeed, rotorGeometry, vaneOuter, globeShape } from './physics.js';
+import { Draw, DEFAULTS, runDraw, randomSeed, rotorGeometry, vaneOuter, globeShape, rackSlot } from './physics.js';
 
 const $ = (id) => document.getElementById(id);
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -12,10 +12,11 @@ const FIELDS = [
   ['ballMass', 'Massa da bola (g)', 1000, 40, 100, 1],
   ['globeRadius', 'Raio do globo (cm)', 100, 20, 40, 1],
   ['globeDepth', 'Profundidade do globo (cm)', 100, 28, 80, 1],
-  ['rpm', 'Rotação do rotor (rpm)', 1, 10, 80, 1],
+  ['rpm', 'Rotação do rotor (rpm)', 1, 10, 200, 5],
   ['paddles', 'Pás do rotor', 1, 0, 6, 1],
   ['rods', 'Hastes do rotor', 1, 0, 6, 1],
-  ['hubRadius', 'Raio do cubo central (cm)', 100, 0, 12, 1],
+  ['vaneInner', 'Início das pás a partir do eixo (cm)', 100, 0, 20, 1],
+  ['vaneSpan', 'Profundidade das pás (% do globo)', 100, 10, 100, 5],
   ['restitution', 'Elasticidade bola-bola', 1, 0.3, 0.95, 0.01],
   ['friction', 'Atrito', 1, 0, 1, 0.05],
   ['mixTime', 'Mistura inicial (s)', 1, 2, 30, 1],
@@ -47,9 +48,9 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#14101c');
 const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 20);
-camera.position.set(0.95, 0.3, 2.15);
+camera.position.set(0.9, 0.35, 2.35);
 const controls = new OrbitControls(camera, canvas);
-controls.target.set(0.3, -0.12, 0);
+controls.target.set(0.3, -0.03, 0);
 controls.enableDamping = true;
 controls.minDistance = 0.5;
 controls.maxDistance = 4;
@@ -124,21 +125,24 @@ function buildScene() {
   const rg = rotorGeometry(params);
   const metalMat = new THREE.MeshStandardMaterial({ color: '#d9dde2', metalness: 0.6, roughness: 0.35 });
   const vaneMat = new THREE.MeshPhysicalMaterial({ color: '#9fd0ff', transparent: true, opacity: 0.32, roughness: 0.1, side: THREE.DoubleSide, depthWrite: false });
-  if (rg.hub > 0) {
-    const hubMesh = new THREE.Mesh(new THREE.CylinderGeometry(rg.hub, rg.hub, rg.zHi - rg.zLo, 32), metalMat);
-    hubMesh.rotation.x = Math.PI / 2;
-    hubMesh.position.z = (rg.zHi + rg.zLo) / 2;
-    rotorGroup.add(hubMesh);
-  }
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(rg.hub, rg.hub, rg.zHi - rg.zLo, 16), metalMat);
+  shaft.rotation.x = Math.PI / 2;
+  shaft.position.z = (rg.zHi + rg.zLo) / 2;
+  // disco metálico do fundo (só visual; fica rente à parede de trás)
+  const discR = 0.11;
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(discR, discR, 0.01, 40), metalMat);
+  disc.rotation.x = Math.PI / 2;
+  disc.position.z = zB - Math.sqrt(Math.max(0, R * R - discR * discR)) + 0.012;
+  rotorGroup.add(shaft, disc);
   // perfil da pá no plano (raio, z), acompanhando o fundo abaulado
   const prof = new THREE.Shape();
-  prof.moveTo(rg.hub, rg.zHi);
+  prof.moveTo(rg.vin, rg.zHi);
   const N = 16;
   for (let i = 0; i <= N; i++) {
     const z = rg.zHi + ((rg.zLo - rg.zHi) * i) / N;
-    prof.lineTo(Math.max(rg.hub, vaneOuter(params, z)), z);
+    prof.lineTo(Math.max(rg.vin, vaneOuter(params, z)), z);
   }
-  prof.lineTo(rg.hub, rg.zLo);
+  prof.lineTo(rg.vin, rg.zLo);
   for (let k = 0; k < params.paddles; k++) {
     const vane = new THREE.Mesh(new THREE.ShapeGeometry(prof), vaneMat);
     vane.rotation.x = Math.PI / 2; // (raio, z) do perfil -> (x, z) do mundo
@@ -154,7 +158,7 @@ function buildScene() {
     rod.rotation.z = -Math.PI / 2;
     rod.position.set(rg.hub + len / 2, 0, rg.rodZ);
     const holder = new THREE.Group();
-    holder.rotation.z = ((k + 0.5) * 2 * Math.PI) / params.rods;
+    holder.rotation.z = (params.rodOffset * Math.PI) / 180 + (k * 2 * Math.PI) / params.rods;
     holder.add(rod);
     rotorGroup.add(holder);
   }
@@ -169,6 +173,15 @@ function buildScene() {
   hub.rotation.x = Math.PI / 2;
   hub.position.set(0, 0, zBack + 0.02);
   staticGroup.add(leg, hub);
+  // reservatório com os 10 tubos de carga, acima do globo
+  const rackMat = new THREE.MeshPhysicalMaterial({ color: '#cfe6ff', transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
+  const d = params.ballDiameter;
+  for (let t = 0; t < 10; t++) {
+    const sl = rackSlot(params, t + 1);
+    const tubeM = new THREE.Mesh(new THREE.CylinderGeometry(d / 2 + 0.004, d / 2 + 0.004, 3 * d + 0.06, 16, 1, true), rackMat);
+    tubeM.position.set(sl.x, sl.y + d + 0.005, sl.z);
+    staticGroup.add(tubeM);
+  }
   const base = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 2 * R + 0.3), metal);
   base.position.set(0.35, -R - 0.25, 0);
   staticGroup.add(base);

@@ -11,10 +11,17 @@ export const DEFAULTS = {
   // corpo cilíndrico curto e fundo abaulado. Quem gira é o rotor interno.
   globeRadius: 0.285, // abertura interna do aro ~57 cm (± 5% na foto de frente)
   globeDepth: 0.39, // profundidade ~1,4 × raio (± 15%, foto em perspectiva)
-  hubRadius: 0.07, // cubo central do rotor: disco de ~14–22 cm na foto
-  paddles: 3, // pás de acrílico radiais (a foto mostra 3; pode haver 4)
-  rods: 3, // hastes metálicas radiais a 120° (encaixes visíveis no cubo)
-  rpm: 34, // estimativa: não dá para medir em foto
+  hubRadius: 0.015, // eixo central fino: no vídeo as bolas passam na frente do disco do fundo
+  vaneInner: 0.10, // as pás começam na borda do disco central (~22 cm de diâmetro)
+  paddles: 3, // pás de acrílico radiais
+  vaneGap: 0.008, // folga entre a ponta da pá e a parede (m)
+  // Fração da profundidade ocupada pelas pás (a partir do fundo). Não dá para ver no vídeo;
+  // calibrado: com pás na profundidade toda as bolas ficam coladas na parede e não misturam.
+  vaneSpan: 0.35,
+  rods: 3, // hastes metálicas a 120°, saindo do centro
+  rodOffset: 25, // graus entre cada haste e a pá seguinte (leitura aproximada do vídeo)
+  rpm: 80, // borrão de movimento no vídeo indica 70–140 rpm; bolas chegam ao topo do globo
+  dropSpeed: 2.4, // m/s: velocidade das bolas ao cair dos tubos de carga (~30 cm de queda)
   restitution: 0.72, // bola-bola (borracha maciça)
   wallRestitution: 0.6, // bola-acrílico
   friction: 0.4,
@@ -25,7 +32,7 @@ export const DEFAULTS = {
   interval: 2.5, // s de mistura entre retiradas
   picks: 15,
   total: 25,
-  dt: 1 / 400,
+  dt: 1 / 600,
 };
 
 export function mulberry32(seed) {
@@ -55,13 +62,29 @@ export function globeShape(p) {
   return { R, depth, F, zB, zPort: (zB + F) / 2 };
 }
 
-// Rotor: cubo cilíndrico no eixo, pás planas radiais e hastes radiais finas.
+// Rotor: eixo fino, pás planas radiais (da borda do disco central até a parede)
+// e hastes radiais finas saindo do centro.
 export function rotorGeometry(p) {
   const s = globeShape(p);
   return {
-    hub: p.hubRadius, ro: s.R - 0.008, // folga pá-parede menor que uma bola
-    zLo: s.zB - 0.7 * s.R, zHi: s.F - 0.012, half: 0.004,
+    hub: p.hubRadius, vin: Math.max(p.hubRadius, p.vaneInner),
+    ro: s.R - p.vaneGap,
+    zLo: s.zB - 0.7 * s.R, zHi: s.zB - 0.7 * s.R + (s.F - 0.012 - (s.zB - 0.7 * s.R)) * p.vaneSpan, half: 0.004,
     rodR: 0.005, rodZ: s.F - 0.045,
+  };
+}
+
+// Tubos de carga: 10 tubos, um por dígito final (1,2,…,9,0), a bola menor embaixo.
+// Devolve a posição da bola n à espera no reservatório e o ponto por onde entra no globo.
+export function rackSlot(p, n) {
+  const s = globeShape(p);
+  const tube = (n - 1) % 10, row = Math.floor((n - 1) / 10);
+  const ex = (tube - 4.5) * 0.049;
+  return {
+    tube, row,
+    x: (tube - 4.5) * 0.058, y: s.R + 0.09 + row * (p.ballDiameter + 0.001), z: s.zPort,
+    ex, ey: Math.sqrt(Math.max(0, s.R ** 2 - ex ** 2)) - p.ballDiameter / 2 - 0.006,
+    ez: s.zPort + (tube % 2 ? 0.03 : -0.03),
   };
 }
 
@@ -69,7 +92,7 @@ export function rotorGeometry(p) {
 export function vaneOuter(p, z) {
   const s = globeShape(p), g = rotorGeometry(p);
   if (z >= s.zB) return g.ro;
-  return Math.min(g.ro, Math.sqrt(Math.max(0, s.R ** 2 - (z - s.zB) ** 2)) - 0.008);
+  return Math.min(g.ro, Math.sqrt(Math.max(0, s.R ** 2 - (z - s.zB) ** 2)) - p.vaneGap);
 }
 
 export class Draw {
@@ -89,32 +112,25 @@ export class Draw {
     this.shape = globeShape(p);
     const { F, zB } = this.shape;
 
+    // As bolas começam no reservatório e caem pelos tubos, uma fileira por vez
+    // (01–10, depois 11–20, depois 21–25), com o rotor já girando.
     this.balls = [];
-    const R = p.globeRadius;
     for (let i = 0; i < p.total; i++) {
       const r = (p.ballDiameter + (rnd() * 2 - 1) * p.diamTol) / 2;
       const m = p.ballMass + (rnd() * 2 - 1) * p.massTol;
-      let x, y, z, ok, tries = 0;
-      do {
-        // posição inicial aleatória dentro do globo, sem sobreposição
-        const lim = R - r - 0.05;
-        x = (rnd() * 2 - 1) * lim;
-        y = (rnd() * 2 - 1) * lim;
-        z = zB - lim + rnd() * (F - r - 0.02 - (zB - lim));
-        ok = Math.hypot(x, y, Math.min(0, z - zB)) < lim && Math.hypot(x, y) > p.hubRadius + r + 0.01;
-        for (let j = 0; ok && j < this.balls.length; j++) {
-          const b = this.balls[j];
-          const d = Math.hypot(x - b.x, y - b.y, z - b.z);
-          if (d < r + b.r + 0.002) ok = false;
-        }
-      } while (!ok && ++tries < 5000);
+      const slot = rackSlot(p, i + 1);
       this.balls.push({
         n: i + 1, r, m, I: 0.4 * m * r * r,
-        x, y, z, vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0,
+        x: slot.x, y: slot.y, z: slot.z, vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0,
         qx: 0, qy: 0, qz: 0, qw: 1, // orientação (para o desenho)
-        active: true,
+        active: false, pending: true,
+        release: 0.3 + slot.row * 0.15 + rnd() * 0.02,
+        // pequenas diferenças de cada queda: é daqui (e da fase do rotor) que vem o acaso
+        ex: slot.ex + (rnd() * 2 - 1) * 0.002, ey: slot.ey, ez: slot.ez + (rnd() * 2 - 1) * 0.004,
+        evx: (rnd() * 2 - 1) * 0.15, evy: -p.dropSpeed * (0.9 + rnd() * 0.2), evz: (rnd() * 2 - 1) * 0.15,
       });
     }
+    this.pendingCount = p.total;
   }
 
   // Contato de uma bola com superfície de massa infinita (parede ou pá).
@@ -191,6 +207,15 @@ export class Draw {
     const lin = Math.max(0, 1 - p.airDrag * dt);
     const ang = Math.max(0, 1 - p.spinDamping * dt);
 
+    if (this.pendingCount) {
+      for (const b of balls) {
+        if (!b.pending || this.time < b.release) continue;
+        b.pending = false; b.active = true; this.pendingCount--;
+        b.x = b.ex; b.y = b.ey; b.z = b.ez;
+        b.vx = b.evx; b.vy = b.evy; b.vz = b.evz;
+      }
+    }
+
     for (const b of balls) {
       if (!b.active) continue;
       b.vy -= p.gravity * dt;
@@ -214,7 +239,8 @@ export class Draw {
       }
     }
 
-    const { hub, ro, zLo, zHi, half, rodR, rodZ } = this.rot;
+    const { hub, vin, ro, zLo, zHi, half, rodR, rodZ } = this.rot;
+    const rodOff = (p.rodOffset * Math.PI) / 180;
     const { F, zB, zPort } = this.shape;
     for (const b of balls) {
       if (!b.active) continue;
@@ -223,14 +249,15 @@ export class Draw {
       for (let k = 0; k < nT; k++) {
         const isRod = k >= nV;
         const th = isRod
-          ? this.angle + ((k - nV + 0.5) * 2 * Math.PI) / p.rods
+          ? this.angle + rodOff + ((k - nV) * 2 * Math.PI) / p.rods
           : this.angle + (k * 2 * Math.PI) / nV;
         const ux = Math.cos(th), uy = Math.sin(th);
         const cz = isRod ? rodZ : Math.max(zLo, Math.min(zHi, b.z));
         let uo = ro;
-        if (cz < zB) uo = Math.min(ro, Math.sqrt(Math.max(0, R * R - (cz - zB) ** 2)) - 0.008);
-        if (uo <= hub) continue;
-        const cu = Math.max(hub, Math.min(uo, b.x * ux + b.y * uy));
+        if (cz < zB) uo = Math.min(ro, Math.sqrt(Math.max(0, R * R - (cz - zB) ** 2)) - p.vaneGap);
+        const ui = isRod ? hub : vin;
+        if (uo <= ui) continue;
+        const cu = Math.max(ui, Math.min(uo, b.x * ux + b.y * uy));
         const px = ux * cu, py = uy * cu;
         const dx = b.x - px, dy = b.y - py, dz = b.z - cz;
         const d = Math.hypot(dx, dy, dz), lim = b.r + (isRod ? rodR : half);
@@ -238,7 +265,7 @@ export class Draw {
           this._hitSurface(b, dx / d, dy / d, dz / d, lim - d, -w * py, w * px, 0, p.wallRestitution);
         }
       }
-      // cubo central girando
+      // eixo central girando
       const dh = Math.hypot(b.x, b.y);
       if (hub > 0 && dh < hub + b.r && dh > 0) {
         const nx = b.x / dh, ny = b.y / dh;

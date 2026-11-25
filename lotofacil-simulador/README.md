@@ -20,9 +20,11 @@ Baixe `lotofacil-simulador.html` e abra com duplo clique (Chrome, Edge ou Firefo
 | Massa da bola | 66 g | divulgado pela Caixa |
 | Material | borracha maciça | divulgado pela Caixa |
 | Globo | tambor fixo com ~57 cm de diâmetro interno e ~39 cm de profundidade: frente plana com aro, fundo abaulado | medido em fotos do equipamento, com as bolas (50 mm) como régua; ± 5% no diâmetro, ± 15% na profundidade |
-| Rotor | cubo central de ~14 cm, 3 pás de acrílico radiais e 3 hastes metálicas a 120° | lido nas mesmas fotos; a extensão das pás em profundidade é suposição |
-| Cores das bolas | uma cor por dígito final | deduzido dos tubos de carga (5 tubos com 3 bolas, 5 com 2) |
-| Rotação, forma de captação | ajustáveis | estimativas (não dá para medir em foto) |
+| Rotor | 3 pás de acrílico radiais (da borda do disco central de ~22 cm até a parede) e 3 hastes metálicas a 120°; centro livre | lido em fotos e quadros de vídeo; a profundidade das pás (35% do globo) foi calibrada: com pás na profundidade toda as bolas ficam coladas na parede e a mistura deixa de ser uniforme, o que não bate com o vídeo |
+| Rotação do rotor | 80 rpm | faixa de 70–140 rpm estimada pelo borrão de movimento no vídeo |
+| Carga das bolas | caem de 10 tubos acima do globo, uma fileira por vez, com o rotor já girando | visto no vídeo |
+| Cores das bolas | uma cor por dígito final | confirmado no vídeo (tubo vermelho: 01, 11, 21) |
+| Forma de captação, elasticidade, atrito | ajustáveis | estimativas |
 | Elasticidade, atrito | ajustáveis | valores típicos de borracha |
 
 A física inclui gravidade, colisões bola-bola e bola-parede com elasticidade, atrito com giro das bolas, rotor de pás girando dentro do tambor fixo, arrasto do ar simplificado e pequenas variações de fabricação por bola.
@@ -33,4 +35,5 @@ A física inclui gravidade, colisões bola-bola e bola-parede com elasticidade, 
 npm install
 npm run build   # gera lotofacil-simulador.html
 npm test        # roda 500 sorteios e confere a uniformidade das dezenas
+node test/diag.mjs 100 '{"rpm":120}'   # compara a mistura com outros parâmetros
 ```

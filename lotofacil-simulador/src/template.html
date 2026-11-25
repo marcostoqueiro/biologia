@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador físico Lotofácil</title>
+<style>
+  :root { --roxo: #930089; --bg: #14101c; --panel: #1f1930; --line: #382e52; --txt: #ece8f5; --mut: #a79cc2; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--txt); font: 14px/1.4 system-ui, "Segoe UI", Arial, sans-serif; display: grid; grid-template-columns: 330px 1fr 400px; }
+  aside { background: var(--panel); padding: 16px; overflow-y: auto; height: 100vh; }
+  aside.left { border-right: 1px solid var(--line); }
+  aside.right { border-left: 1px solid var(--line); }
+  main { position: relative; min-width: 0; height: 100vh; }
+  #view { width: 100%; height: 100%; display: block; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--mut); margin: 20px 0 8px; }
+  p.note { color: var(--mut); font-size: 12px; margin: 6px 0; }
+  .warn { background: #33203a; border: 1px solid #6a3a78; border-radius: 8px; padding: 10px; font-size: 12px; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0; }
+  .row span { color: var(--txt); }
+  input, select { background: #120e1b; color: var(--txt); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
+  input[type=number] { width: 84px; text-align: right; }
+  button { background: var(--roxo); color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.sec { background: #3a2f55; }
+  button:disabled { opacity: .4; cursor: default; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  #hud { position: absolute; left: 16px; right: 16px; bottom: 16px; background: rgba(20,16,28,.82); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  #hud .top { display: flex; justify-content: space-between; color: var(--mut); font-size: 12px; margin-bottom: 6px; }
+  #liveOrder { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; }
+  .ball { width: 34px; height: 34px; border-radius: 50%; background: var(--roxo); color: #fff; font-weight: 700; display: grid; place-items: center; }
+  #games { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { background: #fff; color: #222; border-radius: 8px; padding: 8px; border: 2px solid var(--roxo); break-inside: avoid; }
+  .card header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; color: var(--roxo); }
+  .card small { color: #888; font-size: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .grid i { font-style: normal; font-weight: 700; font-size: 12px; text-align: center; padding: 5px 0; border-radius: 50%; border: 1px solid #ccc; color: #bbb; }
+  .grid i.on { background: var(--roxo); border-color: var(--roxo); color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fq { display: grid; grid-template-columns: 22px 1fr 30px; gap: 6px; align-items: center; font-size: 11px; color: var(--mut); }
+  .fq div { background: #120e1b; height: 7px; border-radius: 4px; overflow: hidden; }
+  .fq b { display: block; height: 100%; background: #b45ad0; }
+  .fq em { font-style: normal; text-align: right; }
+  @media (max-width: 1100px) { body { grid-template-columns: 1fr; } aside, main { height: auto; } main { height: 70vh; } }
+  @media print {
+    body { display: block; background: #fff; color: #000; }
+    aside.left, main, .noprint { display: none !important; }
+    aside.right { height: auto; border: 0; background: #fff; overflow: visible; }
+    #games { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+<aside class="left">
+  <h1>Simulador físico Lotofácil</h1>
+  <p class="note">25 bolas, globo giratório com pás, 15 retiradas.</p>
+  <div class="warn">Isto é uma simulação. O movimento das bolas é caótico: não prevê o sorteio oficial nem aumenta a chance de acerto. Toda combinação tem a mesma probabilidade.</div>
+
+  <h2>Sorteio ao vivo</h2>
+  <div class="btns">
+    <button id="btnStart">Iniciar sorteio</button>
+    <button id="btnReset" class="sec">Reiniciar</button>
+  </div>
+  <label class="row"><span>Velocidade</span>
+    <select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="10">10×</option></select>
+  </label>
+  <label class="row"><span>Semente</span><input type="number" id="seed" style="width:130px"></label>
+  <div class="btns"><button id="btnSeed" class="sec">Repetir com esta semente</button></div>
+  <p class="note">A mesma semente com os mesmos parâmetros repete o sorteio bola por bola.</p>
+
+  <h2>Parâmetros físicos</h2>
+  <div id="params"></div>
+  <p class="note">Diâmetro (50 mm) e massa (66 g) são os valores divulgados pela Caixa. Dimensões do globo, rotação, pás e forma de captação são estimativas — a Caixa não publica o projeto do equipamento.</p>
+</aside>
+
+<main>
+  <canvas id="view"></canvas>
+  <div id="hud">
+    <div class="top"><span id="status"></span><span id="clock"></span></div>
+    <div id="liveOrder"></div>
+  </div>
+</main>
+
+<aside class="right">
+  <h2 style="margin-top:0">Jogos</h2>
+  <div class="noprint">
+    <div class="btns"><button id="btnUse" disabled>Usar sorteio ao vivo como jogo</button></div>
+    <label class="row"><span>Simular vários sorteios</span><input type="number" id="qty" value="6" min="1" max="500"></label>
+    <div class="btns"><button id="btnBatch">Simular e gerar</button></div>
+    <p class="note" id="batchStatus">Cada jogo é um sorteio completo simulado sem animação.</p>
+    <div class="btns">
+      <button id="btnPng" class="sec">Salvar imagem (PNG)</button>
+      <button id="btnTxt" class="sec">Salvar texto</button>
+      <button id="btnPrint" class="sec">Imprimir</button>
+      <button id="btnClear" class="sec">Limpar</button>
+    </div>
+  </div>
+  <p class="note" id="gamesCount"></p>
+  <div id="games"></div>
+  <div id="freqBox" class="noprint" hidden>
+    <h2>Frequência nos jogos gerados</h2>
+    <div id="freq"></div>
+  </div>
+</aside>
+<script>/*__BUNDLE__*/</script>
+</body>
+</html>

@@ -22,7 +22,7 @@ Baixe `lotofacil-simulador.html` e abra com duplo clique (Chrome, Edge ou Firefo
 | Globo | tambor fixo com ~57 cm de diâmetro interno e ~39 cm de profundidade: frente plana com aro, fundo abaulado | medido em fotos do equipamento, com as bolas (50 mm) como régua; ± 5% no diâmetro, ± 15% na profundidade |
 | Rotor | 3 pás de acrílico radiais (da borda do disco central de ~22 cm até a parede) e 3 hastes metálicas a 120°; centro livre | lido em fotos e quadros de vídeo; a profundidade das pás (35% do globo) foi calibrada: com pás na profundidade toda as bolas ficam coladas na parede e a mistura deixa de ser uniforme, o que não bate com o vídeo |
 | Rotação do rotor | 80 rpm | faixa de 70–140 rpm estimada pelo borrão de movimento no vídeo |
-| Carga das bolas | caem de 10 tubos acima do globo, uma fileira por vez, com o rotor já girando | visto no vídeo |
+| Carga das bolas | ficam paradas nos 10 tubos (01–10 embaixo, 11–20 no meio, 21–25 em cima); as comportas abrem juntas e as colunas caem pelos tubos com o rotor já girando | visto no vídeo |
 | Cores das bolas | uma cor por dígito final | confirmado no vídeo (tubo vermelho: 01, 11, 21) |
 | Forma de captação, elasticidade, atrito | ajustáveis | estimativas |
 | Elasticidade, atrito | ajustáveis | valores típicos de borracha |

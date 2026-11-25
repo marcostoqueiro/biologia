@@ -21,7 +21,7 @@ export const DEFAULTS = {
   rods: 3, // hastes metálicas a 120°, saindo do centro
   rodOffset: 25, // graus entre cada haste e a pá seguinte (leitura aproximada do vídeo)
   rpm: 80, // borrão de movimento no vídeo indica 70–140 rpm; bolas chegam ao topo do globo
-  dropSpeed: 2.4, // m/s: velocidade das bolas ao cair dos tubos de carga (~30 cm de queda)
+  loadDelay: 1.5, // s com as bolas paradas nos tubos antes de as comportas abrirem
   restitution: 0.72, // bola-bola (borracha maciça)
   wallRestitution: 0.6, // bola-acrílico
   friction: 0.4,
@@ -112,8 +112,9 @@ export class Draw {
     this.shape = globeShape(p);
     const { F, zB } = this.shape;
 
-    // As bolas começam no reservatório e caem pelos tubos, uma fileira por vez
-    // (01–10, depois 11–20, depois 21–25), com o rotor já girando.
+    // As bolas começam paradas nos tubos de carga (01–10 embaixo, 11–20 no meio,
+    // 21–25 em cima). As comportas abrem juntas e cada coluna cai em queda livre
+    // pelo tubo até entrar no globo, com o rotor já girando.
     this.balls = [];
     for (let i = 0; i < p.total; i++) {
       const r = (p.ballDiameter + (rnd() * 2 - 1) * p.diamTol) / 2;
@@ -124,10 +125,11 @@ export class Draw {
         x: slot.x, y: slot.y, z: slot.z, vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0,
         qx: 0, qy: 0, qz: 0, qw: 1, // orientação (para o desenho)
         active: false, pending: true,
-        release: 0.3 + slot.row * 0.15 + rnd() * 0.02,
+        sx: slot.x, sy: slot.y, sz: slot.z,
         // pequenas diferenças de cada queda: é daqui (e da fase do rotor) que vem o acaso
+        release: p.loadDelay + rnd() * 0.015,
         ex: slot.ex + (rnd() * 2 - 1) * 0.002, ey: slot.ey, ez: slot.ez + (rnd() * 2 - 1) * 0.004,
-        evx: (rnd() * 2 - 1) * 0.15, evy: -p.dropSpeed * (0.9 + rnd() * 0.2), evz: (rnd() * 2 - 1) * 0.15,
+        evx: (rnd() * 2 - 1) * 0.15, evz: (rnd() * 2 - 1) * 0.15, evk: 0.95 + rnd() * 0.05,
       });
     }
     this.pendingCount = p.total;
@@ -210,9 +212,16 @@ export class Draw {
     if (this.pendingCount) {
       for (const b of balls) {
         if (!b.pending || this.time < b.release) continue;
+        const tau = this.time - b.release, drop = b.sy - b.ey;
+        const fall = 0.5 * p.gravity * tau * tau;
+        if (fall < drop) { // ainda dentro do tubo
+          const k = fall / drop;
+          b.x = b.sx + (b.ex - b.sx) * k; b.y = b.sy - fall; b.z = b.sz + (b.ez - b.sz) * k;
+          continue;
+        }
         b.pending = false; b.active = true; this.pendingCount--;
         b.x = b.ex; b.y = b.ey; b.z = b.ez;
-        b.vx = b.evx; b.vy = b.evy; b.vz = b.evz;
+        b.vx = b.evx; b.vy = -p.gravity * tau * b.evk; b.vz = b.evz;
       }
     }
 

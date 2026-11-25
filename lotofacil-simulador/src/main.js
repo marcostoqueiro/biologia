@@ -48,9 +48,9 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#14101c');
 const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 20);
-camera.position.set(0.9, 0.35, 2.35);
+camera.position.set(0.75, 0.3, 2.5);
 const controls = new OrbitControls(camera, canvas);
-controls.target.set(0.3, -0.03, 0);
+controls.target.set(0.3, 0.02, 0);
 controls.enableDamping = true;
 controls.minDistance = 0.5;
 controls.maxDistance = 4;
@@ -173,15 +173,33 @@ function buildScene() {
   hub.rotation.x = Math.PI / 2;
   hub.position.set(0, 0, zBack + 0.02);
   staticGroup.add(leg, hub);
-  // reservatório com os 10 tubos de carga, acima do globo
-  const rackMat = new THREE.MeshPhysicalMaterial({ color: '#cfe6ff', transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
-  const d = params.ballDiameter;
+  // reservatório: 10 tubos de acrílico acima do globo, com dutos até o topo dele
+  const rackMat = new THREE.MeshPhysicalMaterial({ color: '#dff0ff', transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false });
+  const lineMat = new THREE.LineBasicMaterial({ color: '#b8cbe0', transparent: true, opacity: 0.55 });
+  const d = params.ballDiameter, tr = d / 2 + 0.004, th = 3 * d + 0.05;
+  const s0 = rackSlot(params, 1), s9 = rackSlot(params, 10);
+  const yBot = s0.y - d / 2 - 0.004;
   for (let t = 0; t < 10; t++) {
     const sl = rackSlot(params, t + 1);
-    const tubeM = new THREE.Mesh(new THREE.CylinderGeometry(d / 2 + 0.004, d / 2 + 0.004, 3 * d + 0.06, 16, 1, true), rackMat);
-    tubeM.position.set(sl.x, sl.y + d + 0.005, sl.z);
-    staticGroup.add(tubeM);
+    const geo = new THREE.CylinderGeometry(tr, tr, th, 20, 1, true);
+    const tubeM = new THREE.Mesh(geo, rackMat);
+    tubeM.position.set(sl.x, yBot + th / 2, sl.z);
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.CylinderGeometry(tr, tr, th, 2, 1, true)), lineMat);
+    edge.position.copy(tubeM.position);
+    // duto do tubo até o ponto de entrada no globo
+    const a = new THREE.Vector3(sl.x, yBot, sl.z), b = new THREE.Vector3(sl.ex, sl.ey + d / 2, sl.ez);
+    const duct = new THREE.Mesh(new THREE.CylinderGeometry(tr, tr, a.distanceTo(b), 12, 1, true), rackMat);
+    duct.position.copy(a).add(b).multiplyScalar(0.5);
+    duct.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), a.clone().sub(b).normalize());
+    staticGroup.add(tubeM, edge, duct);
   }
+  const frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(s9.x - s0.x + 2 * tr + 0.03, th + 0.03, 2 * tr + 0.03)), lineMat);
+  frame.position.set(0, yBot + th / 2, s0.z);
+  const shelf = new THREE.Mesh(new THREE.BoxGeometry(s9.x - s0.x + 2 * tr + 0.05, 0.008, 2 * tr + 0.05), metal);
+  shelf.position.set(0, yBot - 0.006, s0.z);
+  shelf.material = new THREE.MeshPhysicalMaterial({ color: '#e6eef6', transparent: true, opacity: 0.5 });
+  staticGroup.add(frame, shelf);
   const base = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.03, 2 * R + 0.3), metal);
   base.position.set(0.35, -R - 0.25, 0);
   staticGroup.add(base);
@@ -259,8 +277,9 @@ function renderLive() {
     el.appendChild(s);
   }
   const left = params.picks - draw.drawn.length;
-  let status = 'Pronto. Clique em “Iniciar sorteio”.';
+  let status = 'Bolas posicionadas nos tubos. Clique em “Iniciar sorteio”.';
   if (draw.done) status = 'Sorteio concluído.';
+  else if (running && draw.pendingCount) status = draw.time < draw.p.loadDelay ? 'Rotor girando…' : 'Bolas caindo no globo…';
   else if (running) status = draw.portOpen ? 'Captação aberta…' : `Misturando… faltam ${left} bolas`;
   else if (draw.time > 0) status = 'Pausado.';
   $('status').textContent = status;

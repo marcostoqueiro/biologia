@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Draw, DEFAULTS, runDraw, randomSeed, paddleGeometry, globeShape } from './physics.js';
+import { Draw, DEFAULTS, runDraw, randomSeed, rotorGeometry, vaneOuter, globeShape } from './physics.js';
 
 const $ = (id) => document.getElementById(id);
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -12,9 +12,10 @@ const FIELDS = [
   ['ballMass', 'Massa da bola (g)', 1000, 40, 100, 1],
   ['globeRadius', 'Raio do globo (cm)', 100, 20, 40, 1],
   ['globeDepth', 'Profundidade do globo (cm)', 100, 28, 80, 1],
-  ['rpm', 'Rotação do globo (rpm)', 1, 10, 55, 1],
-  ['paddles', 'Hastes na parede', 1, 0, 12, 1],
-  ['crossbars', 'Hastes diametrais', 1, 0, 3, 1],
+  ['rpm', 'Rotação do rotor (rpm)', 1, 10, 80, 1],
+  ['paddles', 'Pás do rotor', 1, 0, 6, 1],
+  ['rods', 'Hastes do rotor', 1, 0, 6, 1],
+  ['hubRadius', 'Raio do cubo central (cm)', 100, 0, 12, 1],
   ['restitution', 'Elasticidade bola-bola', 1, 0.3, 0.95, 0.01],
   ['friction', 'Atrito', 1, 0, 1, 0.05],
   ['mixTime', 'Mistura inicial (s)', 1, 2, 30, 1],
@@ -58,22 +59,26 @@ const sun = new THREE.DirectionalLight('#ffffff', 1.6);
 sun.position.set(1, 2, 2);
 scene.add(sun);
 
-const globeGroup = new THREE.Group(); // gira com o globo
+const globeGroup = new THREE.Group(); // tambor fixo
+const rotorGroup = new THREE.Group(); // gira: cubo, pás e hastes
 const staticGroup = new THREE.Group(); // base, tubo, canaleta
-scene.add(globeGroup, staticGroup);
+scene.add(globeGroup, rotorGroup, staticGroup);
 const ballMeshes = [];
 let trayStart = new THREE.Vector3();
+
+// Cor por dígito final, como nos tubos de carga: 5 tubos com 3 bolas e 5 com 2.
+const BALL_COLORS = ['#f2f2f2', '#d8232a', '#f2d21b', '#3aa935', '#5a3320', '#1f3fa8', '#e977b0', '#1b1b1b', '#8c8c8c', '#f07d1a'];
 
 function ballTexture(n) {
   const c = document.createElement('canvas');
   c.width = 256; c.height = 128;
   const g = c.getContext('2d');
-  const hue = ((n - 1) * 360) / 25;
-  g.fillStyle = `hsl(${hue} 70% 45%)`;
+  g.fillStyle = BALL_COLORS[n % 10];
   g.fillRect(0, 0, 256, 128);
   for (const cx of [64, 192]) {
     g.fillStyle = '#fff';
     g.beginPath(); g.ellipse(cx, 64, 30, 38, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#222'; g.lineWidth = 3; g.stroke();
     g.fillStyle = '#111';
     g.font = 'bold 44px Arial';
     g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -94,7 +99,7 @@ function clearGroup(g) {
 }
 
 function buildScene() {
-  clearGroup(globeGroup); clearGroup(staticGroup);
+  clearGroup(globeGroup); clearGroup(rotorGroup); clearGroup(staticGroup);
   for (const m of ballMeshes) { scene.remove(m); m.geometry.dispose(); }
   ballMeshes.length = 0;
   const R = params.globeRadius;
@@ -116,20 +121,42 @@ function buildScene() {
     ring.position.z = z;
     globeGroup.add(ring);
   }
-  const pg = paddleGeometry(params);
-  const padMat = new THREE.MeshStandardMaterial({ color: '#e8eef5', metalness: 0.3, roughness: 0.4 });
-  for (let k = 0; k < params.paddles; k++) {
-    const th = (k * 2 * Math.PI) / params.paddles;
-    const bar = new THREE.Mesh(new THREE.CapsuleGeometry(pg.radius, pg.zHi - pg.zLo, 4, 10), padMat);
-    bar.rotation.x = Math.PI / 2;
-    bar.position.set(pg.rho * Math.cos(th), pg.rho * Math.sin(th), (pg.zHi + pg.zLo) / 2);
-    globeGroup.add(bar);
+  const rg = rotorGeometry(params);
+  const metalMat = new THREE.MeshStandardMaterial({ color: '#d9dde2', metalness: 0.6, roughness: 0.35 });
+  const vaneMat = new THREE.MeshPhysicalMaterial({ color: '#9fd0ff', transparent: true, opacity: 0.32, roughness: 0.1, side: THREE.DoubleSide, depthWrite: false });
+  if (rg.hub > 0) {
+    const hubMesh = new THREE.Mesh(new THREE.CylinderGeometry(rg.hub, rg.hub, rg.zHi - rg.zLo, 32), metalMat);
+    hubMesh.rotation.x = Math.PI / 2;
+    hubMesh.position.z = (rg.zHi + rg.zLo) / 2;
+    rotorGroup.add(hubMesh);
   }
-  for (let k = 0; k < params.crossbars; k++) {
-    const bar = new THREE.Mesh(new THREE.CapsuleGeometry(pg.radius, pg.barHalf * 2, 4, 10), padMat);
-    bar.rotation.z = (k * Math.PI) / params.crossbars - Math.PI / 2;
-    bar.position.z = zPort;
-    globeGroup.add(bar);
+  // perfil da pá no plano (raio, z), acompanhando o fundo abaulado
+  const prof = new THREE.Shape();
+  prof.moveTo(rg.hub, rg.zHi);
+  const N = 16;
+  for (let i = 0; i <= N; i++) {
+    const z = rg.zHi + ((rg.zLo - rg.zHi) * i) / N;
+    prof.lineTo(Math.max(rg.hub, vaneOuter(params, z)), z);
+  }
+  prof.lineTo(rg.hub, rg.zLo);
+  for (let k = 0; k < params.paddles; k++) {
+    const vane = new THREE.Mesh(new THREE.ShapeGeometry(prof), vaneMat);
+    vane.rotation.x = Math.PI / 2; // (raio, z) do perfil -> (x, z) do mundo
+    vane.scale.y = -1;
+    const holder = new THREE.Group();
+    holder.rotation.z = (k * 2 * Math.PI) / params.paddles;
+    holder.add(vane);
+    rotorGroup.add(holder);
+  }
+  for (let k = 0; k < params.rods; k++) {
+    const len = rg.ro - rg.hub;
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(rg.rodR, rg.rodR, len, 8), metalMat);
+    rod.rotation.z = -Math.PI / 2;
+    rod.position.set(rg.hub + len / 2, 0, rg.rodZ);
+    const holder = new THREE.Group();
+    holder.rotation.z = ((k + 0.5) * 2 * Math.PI) / params.rods;
+    holder.add(rod);
+    rotorGroup.add(holder);
   }
 
   // estrutura fixa: eixo, tubo de saída e canaleta das bolas sorteadas
@@ -189,7 +216,7 @@ function resetScene(seed) {
 }
 
 function syncMeshes() {
-  globeGroup.rotation.z = draw.angle;
+  rotorGroup.rotation.z = draw.angle;
   for (const b of draw.balls) {
     const m = ballMeshes[b.n - 1];
     const ex = exits.get(b.n);
